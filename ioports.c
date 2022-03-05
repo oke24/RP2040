@@ -1,10 +1,10 @@
 /*
-  pico_cnc.c - driver code for RP2040 ARM processors
+  ioports.c - driver code for RP2040 ARM processors
 
   Part of grblHAL
 
-  Copyright (c) 2021 Terje Io
-  
+  Copyright (c) 2020-2022 Terje Io
+
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
@@ -19,21 +19,18 @@
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <math.h>
-#include <stdlib.h>
-#include <string.h>
-
 #include "driver.h"
 
-#if defined(BOARD_PICO_CNC)
+#ifdef HAS_IOPORTS
 
-#include "hardware/pio.h"
+#include <math.h>
+#include <string.h>
+#include <stdlib.h>
 
-#include "driverPIO.pio.h"
+#include "hardware/gpio.h"
+
 #include "grbl/protocol.h"
-
-static output_sr_t *sr;
-static bool state[AUX_N_OUT];
+#include "grbl/settings.h"
 
 static char *pnum = NULL;
 static uint8_t n_in, n_out, *in_map = NULL, *out_map = NULL;
@@ -41,28 +38,47 @@ static volatile uint32_t event_bits;
 static volatile bool spin_lock = false;
 static input_signal_t *aux_in;
 static output_signal_t *aux_out;
+static ioport_bus_t out = {0};
 static char input_ports[50] = "", output_ports[50] = "";
 
 static void aux_settings_load (void);
-static bool is_setting_available (const setting_detail_t *setting);
 static status_code_t aux_set_invert_out (setting_id_t id, uint_fast16_t int_value);
 static uint32_t aux_get_invert_out (setting_id_t setting);
-static void digital_out (uint8_t port, bool on);
+static bool is_setting_available (const setting_detail_t *setting);
 
 static const setting_group_detail_t aux_groups[] = {
     { Group_Root, Group_AuxPorts, "Aux ports"}
 };
 
 static const setting_detail_t aux_settings[] = {
-    { Settings_IoPort_InvertOut, Group_AuxPorts, "Invert I/O Port outputs", NULL, Format_Bitfield, output_ports, NULL, NULL, Setting_NonCoreFn, aux_set_invert_out, aux_get_invert_out },
     { Settings_IoPort_InvertIn, Group_AuxPorts, "Invert I/O Port inputs", NULL, Format_Bitfield, input_ports, NULL, NULL, Setting_NonCore, &settings.ioport.invert_in.mask, NULL, is_setting_available },
+//    { Settings_IoPort_Pullup_Disable, Group_AuxPorts, "I/O Port inputs pullup disable", NULL, Format_Bitfield, "Port 0,Port 1,Port 2,Port 3,Port 4,Port 5,Port 6,Port 7", NULL, NULL },
+    { Settings_IoPort_InvertOut, Group_AuxPorts, "Invert I/O Port outputs", NULL, Format_Bitfield, output_ports, NULL, NULL, Setting_NonCoreFn, aux_set_invert_out, aux_get_invert_out, is_setting_available },
+//    { Settings_IoPort_OD_Enable, Group_AuxPorts, "I/O Port outputs as open drain", NULL, Format_Bitfield, "Port 0,Port 1,Port 2,Port 3,Port 4,Port 5,Port 6,Port 7", NULL, NULL }
 };
+
+#ifndef NO_SETTINGS_DESCRIPTIONS
+
+static const setting_descr_t aux_settings_descr[] = {
+    { Settings_IoPort_InvertIn, "Invert IOPort inputs." },
+//    { Settings_IoPort_Pullup_Disable, "Disable IOPort input pullups." },
+    { Settings_IoPort_InvertOut, "Invert IOPort output." },
+//    { Settings_IoPort_OD_Enable, "Set IOPort outputs as open drain (OD)." }
+};
+
+#endif
+
+static void aux_settings_load (void);
 
 static setting_details_t setting_details = {
     .groups = aux_groups,
     .n_groups = sizeof(aux_groups) / sizeof(setting_group_detail_t),
     .settings = aux_settings,
     .n_settings = sizeof(aux_settings) / sizeof(setting_detail_t),
+#ifndef NO_SETTINGS_DESCRIPTIONS
+    .descriptions = aux_settings_descr,
+    .n_descriptions = sizeof(aux_settings_descr) / sizeof(setting_descr_t),
+#endif
     .load = aux_settings_load,
     .save = settings_write_global
 };
@@ -74,8 +90,13 @@ static bool is_setting_available (const setting_detail_t *setting)
     switch(setting->id) {
 
         case Settings_IoPort_InvertIn:
-//        case Settings_IoPort_Pullup_Disable:
+        case Settings_IoPort_Pullup_Disable:
             available = n_in > 0;
+            break;
+
+        case Settings_IoPort_InvertOut:
+        case Settings_IoPort_OD_Enable:
+            available = n_out > 0;
             break;
 
         default:
@@ -85,28 +106,18 @@ static bool is_setting_available (const setting_detail_t *setting)
     return available;
 }
 
-static void aux_settings_load (void)
-{
-    uint_fast8_t idx = AUX_N_OUT;
-
-    do {
-        idx--;
-		digital_out(idx, false);
-    } while(idx);
-}
-
 static status_code_t aux_set_invert_out (setting_id_t id, uint_fast16_t value)
 {
     ioport_bus_t invert;
-    invert.mask = (uint8_t)value & AUX_OUT_MASK;
+    invert.mask = (uint8_t)value & out.mask;
 
     if(invert.mask != settings.ioport.invert_out.mask) {
-        uint_fast8_t idx = AUX_N_OUT;
+        uint_fast8_t port = n_out;
         do {
-            idx--;
-            if(((settings.ioport.invert_out.mask >> idx) & 0x01) != ((invert.mask >> idx) & 0x01))
-                digital_out(idx, !state[idx]);
-        } while(idx);
+            port--;
+            if(((settings.ioport.invert_out.mask >> port) & 0x01) != ((invert.mask >> port) & 0x01))
+                DIGITAL_OUT(aux_out[port].bit, !DIGITAL_IN(aux_out[port].bit));
+        } while(port);
 
         settings.ioport.invert_out.mask = invert.mask;
     }
@@ -119,56 +130,41 @@ static uint32_t aux_get_invert_out (setting_id_t setting)
     return settings.ioport.invert_out.mask;
 }
 
+static void aux_settings_load (void)
+{
+//    aux_set_pullup();
+
+    uint_fast8_t idx = n_out;
+    if(n_out) do {
+        idx--;
+        DIGITAL_OUT(aux_out[idx].bit, (settings.ioport.invert_out.mask >> idx) & 0x01);
+    } while(idx);
+}
+
+/*
+static void aux_set_pullup (void)
+{
+    GPIO_InitTypeDef GPIO_Init = {0};
+
+    GPIO_Init.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_Init.Mode = GPIO_MODE_INPUT;
+
+    GPIO_Init.Pin = AUXINPUT0_PIN;
+    GPIO_Init.Pull = settings.ioport.pullup_disable_in.bit0 ? GPIO_PULLDOWN : GPIO_PULLUP;
+    HAL_GPIO_Init(AUXINPUT0_PORT, &GPIO_Init);
+
+    GPIO_Init.Pin = AUXINPUT1_PIN;
+    GPIO_Init.Pull = settings.ioport.pullup_disable_in.bit1 ? GPIO_PULLDOWN : GPIO_PULLUP;
+    HAL_GPIO_Init(AUXINPUT1_PORT, &GPIO_Init);
+}
+*/
+
 static void digital_out (uint8_t port, bool on)
 {
     if(port < n_out) {
-
         if(out_map)
             port = out_map[port];
-
-        on = ((settings.ioport.invert_out.mask >> port) & 0x01) ? !on : on;
-
-        state[port] = on;
-
-        switch(port)
-        {
-            case 0:
-                sr->aux0_out = on;
-                break;
-
-            case 1:
-                sr->aux1_out = on;
-                break;	
-
-            case 2:
-                sr->aux2_out = on;
-                break;	
-
-            case 3:
-                sr->aux3_out = on;
-                break;	
-
-            case 4:
-                sr->aux4_out = on;
-                break;	
-
-            case 5:
-                sr->aux5_out = on;
-                break;	
-
-            case 6:
-                sr->aux6_out = on;
-                break;
-
-            case 7:
-                sr->aux7_out = on;
-                break;
-                
-            default:
-                break;
-        }
-
-        out_sr16_write(pio1, 1, sr->value);
+        DIGITAL_OUT(aux_out[port].bit, ((settings.ioport.invert_out.mask >> port) & 0x01) ? !on : on);
     }
 }
 
@@ -201,7 +197,7 @@ inline static __attribute__((always_inline)) int32_t get_input (const input_sign
                     break;
             } while(--delay && !sys.abort);
 
-            pinEnableIRQ(input, IRQ_Mode_None);    // Restore pin interrupt status
+            pinEnableIRQ(input, input->irq_mode);    // Restore pin interrupt status
         }
 
     } else {
@@ -210,7 +206,7 @@ inline static __attribute__((always_inline)) int32_t get_input (const input_sign
 
         do {
             if((DIGITAL_IN(input->bit) ^ invert) == wait_for) {
-                value = DIGITAL_IN(input->bit);
+                value = DIGITAL_IN(input->bit) ^ invert;
                 break;
             }
             if(delay) {
@@ -219,17 +215,31 @@ inline static __attribute__((always_inline)) int32_t get_input (const input_sign
             } else
                 break;
         } while(--delay && !sys.abort);
+
     }
 
     return value;
 }
 
-inline static __attribute__((always_inline)) uint8_t in_map_rev (uint8_t port)
+static int32_t wait_on_input (io_port_type_t type, uint8_t port, wait_mode_t wait_mode, float timeout)
 {
-    if(in_map) {
-        uint_fast8_t idx = n_in;
+    int32_t value = -1;
+
+    if(type == Port_Digital && port < n_in) {
+        if(in_map)
+            port = in_map[port];
+        value = get_input(&aux_in[port], (settings.ioport.invert_in.mask << port) & 0x01, wait_mode, timeout);
+    }
+
+    return value;
+}
+
+inline static __attribute__((always_inline)) uint8_t out_map_rev (uint8_t port)
+{
+    if(out_map) {
+        uint_fast8_t idx = n_out;
         do {
-            if(in_map[--idx] == port) {
+            if(out_map[--idx] == port) {
                 port = idx;
                 break;
             }
@@ -239,12 +249,12 @@ inline static __attribute__((always_inline)) uint8_t in_map_rev (uint8_t port)
     return port;
 }
 
-inline static __attribute__((always_inline)) uint8_t out_map_rev (uint8_t port)
+inline static __attribute__((always_inline)) uint8_t in_map_rev (uint8_t port)
 {
-    if(out_map) {
-        uint_fast8_t idx = n_out;
+    if(in_map) {
+        uint_fast8_t idx = n_in;
         do {
-            if(out_map[--idx] == port) {
+            if(in_map[--idx] == port) {
                 port = idx;
                 break;
             }
@@ -265,21 +275,6 @@ void ioports_event (input_signal_t *input)
     spin_lock = false;
 }
 
-static int32_t wait_on_input (io_port_type_t type, uint8_t port, wait_mode_t wait_mode, float timeout)
-{
-    int32_t value = -1;
-
-    if(type == Port_Digital && port < n_in) {
-        if(in_map)
-            port = in_map[port];
-        value = get_input(&aux_in[port], (settings.ioport.invert_in.mask << port) & 0x01, wait_mode, timeout);
-    }
-//    else if(port == 0)
-//        value = analogRead(41);
-
-    return value;
-}
-
 static bool register_interrupt_handler (uint8_t port, pin_irq_mode_t irq_mode, ioport_interrupt_callback_ptr interrupt_callback)
 {
     bool ok;
@@ -291,7 +286,7 @@ static bool register_interrupt_handler (uint8_t port, pin_irq_mode_t irq_mode, i
 
         input_signal_t *input = &aux_in[port];
 
-        if(irq_mode != IRQ_Mode_None && (ok = interrupt_callback != NULL)) {
+        if((ok = (irq_mode & input->cap.irq_mode) == irq_mode && interrupt_callback != NULL)) {
             input->irq_mode = irq_mode;
             input->interrupt_callback = interrupt_callback;
             pinEnableIRQ(input, irq_mode);
@@ -299,7 +294,7 @@ static bool register_interrupt_handler (uint8_t port, pin_irq_mode_t irq_mode, i
 
         if(irq_mode == IRQ_Mode_None || !ok) {
             while(spin_lock);
-            pinEnableIRQ(input, IRQ_Mode_None);
+        //    EXTI->IMR &= ~input->bit;     // Disable pin interrupt
             input->irq_mode = IRQ_Mode_None;
             input->interrupt_callback = NULL;
         }
@@ -341,7 +336,6 @@ static xbar_t *get_pin_info (io_port_type_t type, io_port_direction_t dir, uint8
             pin.group = aux_out[port].group;
             pin.pin = aux_out[port].pin;
             pin.bit = 1 << aux_out[port].pin;
- //           pin.port = (void *)aux_out[port].port;
             pin.description = aux_out[port].description;
             info = &pin;
         }
@@ -448,23 +442,22 @@ bool swap_pins (io_port_type_t type, io_port_direction_t dir, uint8_t port_a, ui
     return ok;
 }
 
-void board_init (pin_group_pins_t *aux_inputs, pin_group_pins_t *aux_outputs, output_sr_t *reg)
+void ioports_init (pin_group_pins_t *aux_inputs, pin_group_pins_t *aux_outputs)
 {
     uint_fast8_t i, ports;
 
-    sr = reg;
     aux_in = aux_inputs->pins.inputs;
     aux_out = aux_outputs->pins.outputs;
 
     if((hal.port.num_digital_in = n_in = aux_inputs->n_pins)) {
         hal.port.wait_on_input = wait_on_input;
         hal.port.register_interrupt_handler = register_interrupt_handler;
-        in_map = malloc(n_in * sizeof(uint8_t));
+        in_map = malloc(n_in * sizeof(n_in));
     }
 
     if((hal.port.num_digital_out = n_out = aux_outputs->n_pins)) {
         hal.port.digital_out = digital_out;
-        out_map = malloc(n_out * sizeof(uint8_t));
+        out_map = malloc(n_out * sizeof(n_out));
     }
 
     if((ports = max(n_in, n_out)) > 0)  {
@@ -507,13 +500,14 @@ void board_init (pin_group_pins_t *aux_inputs, pin_group_pins_t *aux_outputs, ou
         }
 
         // Add port names for ports up to 8 for $-setting flags
+
         for(i = 0; i < min(hal.port.num_digital_in, 8); i++) {
             strcat(input_ports, i == 0 ? "Aux " : ",Aux ");
             strcat(input_ports, uitoa(i));
         }
 
         for(i = 0; i < min(hal.port.num_digital_out, 8) ; i++) {
-         //   out.mask = (out.mask << 1) + 1;
+            out.mask = (out.mask << 1) + 1;
             strcat(output_ports, i == 0 ? "Aux " : ",Aux ");
             strcat(output_ports, uitoa(i));
         }

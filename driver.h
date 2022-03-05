@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021 Terje Io
+  Copyright (c) 2021-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -78,18 +78,12 @@
 #define GPIO_INPUT    35
 #define GPIO_OUTPUT   36
 #define GPIO_PIO      37
-#define GPIO_SR8      38
-#define GPIO_SR16     39
+#define GPIO_PIO_1    38
+#define GPIO_SR8      39
+#define GPIO_SR16     40
 
 #define STEPPERS_ENABLE_PINMODE 0
 
-#if EEPROM_ENABLE || KEYPAD_ENABLE == 1 || IOEXPAND_ENABLE || (TRINAMIC_ENABLE && TRINAMIC_I2C)
-#define I2C_ENABLE 1
-#else
-#define I2C_ENABLE 0
-
-  //I2C_PORT 1 // SCL_PIN = 27, SDA_PIN = 26
-#endif
 // Define timer allocations.
 
 /*
@@ -115,6 +109,10 @@
   #include "pico_cnc_map.h"
 #elif defined(BOARD_PICOBOB)
   #include "picobob_map.h"
+#elif defined(BOARD_BTT_SKR_PICO_10)
+  #include "btt_skr_pico_10_map.h"
+#elif defined BOARD_CITOH_CX6000
+  #include "citoh_cx6000_map.h"
 #elif defined(BOARD_MY_MACHINE)
   #include "my_machine_map.h"
 #else // default board
@@ -136,6 +134,11 @@
 #define FLASH_ENABLE 0
 #endif
 
+#ifdef IOEXPAND_ENABLE
+#undef I2C_ENABLE
+#define I2C_ENABLE 1
+#endif
+
 #if I2C_ENABLE && !defined(I2C_PORT)
 #define I2C_PORT    1
 #define I2C_SDA     26
@@ -146,14 +149,37 @@
 #ifndef TRINAMIC_MIXED_DRIVERS
 #define TRINAMIC_MIXED_DRIVERS 1
 #endif
-#include "trinamic/trinamic.h"
+#include "motors/trinamic.h"
 #endif
 
-#if MPG_MODE_ENABLE && !USB_SERIAL_CDC
+#if MODBUS_ENABLE
+#define MODBUS_TEST 1
+#else
+#define MODBUS_TEST 0
+#endif
+
+#if KEYPAD_ENABLE == 2 && MPG_ENABLE == 0
+#define KEYPAD_TEST 1
+#else
+#define KEYPAD_TEST 0
+#endif
+
+#if MODBUS_TEST + KEYPAD_TEST + BLUETOOTH_ENABLE + TRINAMIC_UART_ENABLE + MPG_ENABLE > 1
+#error "Only one option that uses the serial port can be enabled!"
+#endif
+
+#if MODBUS_TEST || KEYPAD_TEST || BLUETOOTH_ENABLE || TRINAMIC_UART_ENABLE || MPG_ENABLE
 #define SERIAL2_MOD
 #endif
 
+#undef MODBUS_TEST
+#undef KEYPAD_TEST
+
 // End configuration
+
+#if MPG_MODE == 1 && !defined(MPG_MODE_PIN)
+#error "MPG_MODE_PIN must be defined!"
+#endif
 
 #if KEYPAD_ENABLE == 1 && !defined(I2C_STROBE_PIN)
 #error Keypad plugin not supported!
@@ -212,6 +238,8 @@ bool driver_init (void);
 
 #if OUT_SHIFT_REGISTER
 void board_init (pin_group_pins_t *aux_inputs, pin_group_pins_t *aux_outputs, output_sr_t *reg);
+#else
+void board_init (void);
 #endif
 
 void ioports_init (pin_group_pins_t *aux_inputs, pin_group_pins_t *aux_outputs);

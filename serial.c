@@ -3,7 +3,7 @@
 
   Part of grblHAL
 
-  Copyright (c) 2021 Terje Io
+  Copyright (c) 2021-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -63,6 +63,39 @@ static enqueue_realtime_command_ptr enqueue_realtime_command2 = protocol_enqueue
 static void uart2_interrupt_handler (void);
 
 #endif
+
+static io_stream_properties_t serial[] = {
+    {
+      .type = StreamType_Serial,
+      .instance = 0,
+      .flags.claimable = On,
+      .flags.claimed = Off,
+      .flags.connected = On,
+      .flags.can_set_baud = On,
+      .claim = serialInit
+    },
+#ifdef SERIAL2_MOD
+    {
+      .type = StreamType_Serial,
+      .instance = 1,
+      .flags.claimable = On,
+      .flags.claimed = Off,
+      .flags.connected = On,
+      .flags.can_set_baud = On,
+      .claim = serial2Init
+    }
+#endif
+};
+
+void serialRegisterStreams (void)
+{
+    static io_stream_details_t streams = {
+        .n_streams = sizeof(serial) / sizeof(io_stream_properties_t),
+        .streams = serial,
+    };
+
+    stream_register_streams(&streams);
+}
 
 //
 // serialGetC - returns -1 if no data available
@@ -200,13 +233,13 @@ const io_stream_t *serialInit (uint32_t baud_rate)
 {
     static const io_stream_t stream = {
         .type = StreamType_Serial,
-        .connected = true,
+        .state.connected = On,
         .read = serialGetC,
         .write = serialWriteS,
-        .write_all = serialWriteS,
         .write_char = serialPutC,
         .enqueue_rt_command = serialEnqueueRtCommand,
         .get_rx_buffer_free = serialRxFree,
+        .get_rx_buffer_count = serialRxCount,
         .reset_read_buffer = serialRxFlush,
         .cancel_read_buffer = serialRxCancel,
         .suspend_read = serialSuspendInput,
@@ -215,14 +248,18 @@ const io_stream_t *serialInit (uint32_t baud_rate)
         .set_enqueue_rt_handler = serialSetRtHandler
     };
 
+    if(serial[0].flags.claimed)
+        return NULL;
+
+    serial[0].flags.claimed = On;
+
     gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
     
-    uart_init(UART_PORT, 2400);
+    uart_init(UART_PORT, baud_rate);
 
     uart_set_hw_flow(UART_PORT, false, false);
     uart_set_format(UART_PORT, 8, 1, UART_PARITY_NONE);
-    uart_set_baudrate(UART_PORT, baud_rate);
     uart_set_fifo_enabled(UART_PORT, true);
 
     irq_set_exclusive_handler(UART_IRQ, uart_interrupt_handler);
@@ -252,7 +289,7 @@ const io_stream_t *serialInit (uint32_t baud_rate)
     return &stream;           
 }
 
-static void uart_interrupt_handler (void)
+static void uart_interrupt_handler(void)
 {
     uint32_t data, ctrl = UART->mis;
 
@@ -379,6 +416,11 @@ static void serial2Write (const char *s, uint16_t length)
         serial2PutC(*ptr++);
 }
 
+static bool serial2SuspendInput (bool suspend)
+{
+    return stream_rx_suspend(&rx2buf, suspend);
+}
+
 static uint16_t serial2TxCount (void) {
 
     uint_fast16_t head = tx2buf.head, tail = tx2buf.tail;
@@ -425,10 +467,9 @@ const io_stream_t *serial2Init (uint32_t baud_rate)
 {
     static const io_stream_t stream = {
         .type = StreamType_Serial,
-        .connected = true,
+        .state.connected = true,
         .read = serial2GetC,
         .write = serial2WriteS,
-        .write_all = serial2WriteS,
         .write_char = serial2PutC,
         .write_n = serial2Write,
         .enqueue_rt_command = serial2EnqueueRtCommand,
@@ -438,20 +479,24 @@ const io_stream_t *serial2Init (uint32_t baud_rate)
         .reset_read_buffer = serial2RxFlush,
         .cancel_read_buffer = serial2RxCancel,
         .reset_write_buffer = serial2TxFlush,
-        .disable = serial2Disable,
-    //    .suspend_read =  = serial2SuspendInput
+        .disable_rx = serial2Disable,
+        .suspend_read = serial2SuspendInput,
         .set_baud_rate = serial2SetBaudRate,
         .set_enqueue_rt_handler = serial2SetRtHandler
     };
 
+    if(serial[1].flags.claimed)
+        return NULL;
+
+    serial[1].flags.claimed = On;
+
     gpio_set_function(UART2_TX_PIN, GPIO_FUNC_UART);
     gpio_set_function(UART2_RX_PIN, GPIO_FUNC_UART);
     
-    uart_init(UART2_PORT, 2400);
+    uart_init(UART2_PORT, baud_rate);
 
     uart_set_hw_flow(UART2_PORT, false, false);
     uart_set_format(UART2_PORT, 8, 1, UART_PARITY_NONE);
-    uart_set_baudrate(UART2_PORT, 115200);
     uart_set_fifo_enabled(UART2_PORT, true);
 
     irq_set_exclusive_handler(UART2_IRQ, uart2_interrupt_handler);
@@ -480,7 +525,7 @@ const io_stream_t *serial2Init (uint32_t baud_rate)
     return &stream;
 }
 
-static void uart2_interrupt_handler (void)
+static void __not_in_flash_func(uart2_interrupt_handler)(void)
 {
     uint32_t data, ctrl = UART2->mis;
 

@@ -1,10 +1,9 @@
 /*
-
-  serial.h - low level functions for transmitting bytes via the serial port
+  tbtt_skr_pico_10.c - driver code for RP2040 ARM processors
 
   Part of grblHAL
 
-  Copyright (c) 2017-2020 Terje Io
+  Copyright (c) 2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -18,20 +17,17 @@
 
   You should have received a copy of the GNU General Public License
   along with Grbl.  If not, see <http://www.gnu.org/licenses/>.
-
 */
-
-#include <stdint.h>
-#include <stdbool.h>
 
 #include "driver.h"
 
-#define RX_BUFFER_HWM 900
-#define RX_BUFFER_LWM 300
+#if defined(BOARD_BTT_SKR_PICO_10)
 
-void serialRegisterStreams (void);
-const io_stream_t *serialInit (uint32_t baud_rate);
+extern void tmc_uart_init (void);
 
-#ifdef SERIAL2_MOD
-const io_stream_t *serial2Init(uint32_t baud_rate);
+void board_init (void)
+{
+    tmc_uart_init();
+}
+
 #endif

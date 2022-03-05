@@ -4,7 +4,7 @@
 
   Part of grblHAL
 
-  Some parts are copyright (c) 2021 Terje Io
+  Some parts are copyright (c) 2021-2022 Terje Io
 
   Grbl is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@
 
 static stream_block_tx_buffer_t txbuf = {0};
 static stream_rx_buffer_t rxbuf;
-static enqueue_realtime_command_ptr enqueue_realtime_command = protocol_enqueue_realtime_command;
+static volatile enqueue_realtime_command_ptr enqueue_realtime_command = protocol_enqueue_realtime_command;
 
 // PICO_CONFIG: PICO_STDIO_USB_STDOUT_TIMEOUT_US, Number of microseconds to be blocked trying to write USB output before assuming the host has disappeared and discarding data, default=500000, group=pico_stdio_usb
 #ifndef PICO_STDIO_USB_STDOUT_TIMEOUT_US
@@ -67,6 +67,8 @@ static enqueue_realtime_command_ptr enqueue_realtime_command = protocol_enqueue_
 
 static_assert(PICO_STDIO_USB_LOW_PRIORITY_IRQ > RTC_IRQ, ""); // note RTC_IRQ is currently the last one
 static mutex_t stdio_usb_mutex;
+
+static void execute_realtime (uint_fast16_t state);
 
 static void low_priority_worker_irq (void)
 {
@@ -141,7 +143,7 @@ int stdio_usb_in_chars (char *buf, int length)
 }
 
 //
-// Returns number of characters in serial input buffer
+// Returns number of characters in USB input buffer
 //
 static uint16_t usb_serialRxCount (void)
 {
@@ -151,7 +153,7 @@ static uint16_t usb_serialRxCount (void)
 }
 
 //
-// Returns number of free characters in serial input buffer
+// Returns number of free characters in USB input buffer
 //
 static uint16_t usb_serialRxFree (void)
 {
@@ -161,7 +163,7 @@ static uint16_t usb_serialRxFree (void)
 }
 
 //
-// Flushes the serial input buffer (including the USB buffer)
+// Flushes the USB input buffer (including the USB buffer)
 //
 static void usb_serialRxFlush (void)
 {
@@ -170,7 +172,7 @@ static void usb_serialRxFlush (void)
 }
 
 //
-// Flushes and adds a CAN character to the serial input buffer
+// Flushes and adds a CAN character to the USB input buffer
 //
 static void usb_serialRxCancel (void)
 {
@@ -180,7 +182,7 @@ static void usb_serialRxCancel (void)
 }
 
 //
-// Writes a character to the serial output stream
+// Writes a character to the USB output stream
 //
 static bool usb_serialPutC (const char c)
 {
@@ -223,7 +225,7 @@ bool _usb_write (void)
 }
 
 //
-// Writes a number of characters from string to the serial, blocks if buffer full
+// Writes a number of characters from string to the USB output stream, blocks if buffer full
 //
 static void usb_serialWrite (const char *s, uint16_t length)
 {
@@ -235,7 +237,7 @@ static void usb_serialWrite (const char *s, uint16_t length)
 }
 
 //
-// Writes a null terminated string to the serial output stream, blocks if buffer full
+// Writes a null terminated string to the USB output stream, blocks if buffer full
 //
 static void usb_serialWriteS (const char *s)
 {
@@ -298,13 +300,14 @@ const io_stream_t *usb_serialInit (void)
 {
     static const io_stream_t stream = {
         .type = StreamType_Serial,
+        .state.is_usb = On,
         .read = usb_serialGetC,
         .write = usb_serialWriteS,
-        .write_all = usb_serialWriteS,
         .write_n = usb_serialWrite,
         .write_char = usb_serialPutC,
         .enqueue_rt_command = usbEnqueueRtCommand,
         .get_rx_buffer_free = usb_serialRxFree,
+        .get_rx_buffer_count = usb_serialRxCount,
         .reset_read_buffer = usb_serialRxFlush,
         .cancel_read_buffer = usb_serialRxCancel,
         .suspend_read = usb_serialSuspendInput,
@@ -323,6 +326,7 @@ const io_stream_t *usb_serialInit (void)
     txbuf.s = txbuf.data;
     txbuf.max_length = CFG_TUD_CDC_TX_BUFSIZE;
     txbuf.max_length = (txbuf.max_length > BLOCK_TX_BUFFER_SIZE ? BLOCK_TX_BUFFER_SIZE : txbuf.max_length) - 20;
+    grbl.on_execute_realtime = execute_realtime;
 
     return &stream;
 }
@@ -333,12 +337,19 @@ const io_stream_t *usb_serialInit (void)
 // them for processing by grbl. Real time command characters are stripped out
 // and submitted for realtime processing.
 //
-void usb_execute_realtime (uint_fast16_t state)
+static void execute_realtime (uint_fast16_t state)
 {
-    char c, *dp;
-    int avail, free;
+    static volatile bool lock = false;
     static char tmpbuf[BLOCK_RX_BUFFER_SIZE];
 
+    if(lock)
+        return;
+
+    char c, *dp;
+    int avail, free;
+ 
+    lock = true;
+ 
     if((avail = tud_cdc_available())) {
 
         dp = tmpbuf;
@@ -359,4 +370,6 @@ void usb_execute_realtime (uint_fast16_t state)
             }
         }
     }
+
+    lock = false;
 }
