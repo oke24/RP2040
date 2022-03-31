@@ -37,7 +37,8 @@
 #define DIRECTION_PORT        GPIO_OUTPUT
 #define DIRECTION_OUTMODE     GPIO_MAP
 #define X_DIRECTION_PIN       9
-#define Y_DIRECTION_PIN       0
+//ok #define Y_DIRECTION_PIN       0
+#define Y_DIRECTION_PIN       10
 #define Z_DIRECTION_PIN       11
 
 // Define ganged axis or A axis step pulse and step direction output pins.
@@ -62,7 +63,9 @@
 #define LIMIT_PORT            GPIO_INPUT
 #define X_LIMIT_PIN           2
 #define Y_LIMIT_PIN           1
-#define Z_LIMIT_PIN           2
+//ok #define Z_LIMIT_PIN           2
+//ok #define Z_LIMIT_PIN           0
+#define Z_LIMIT_PIN           5
 
 // Define spindle enable and spindle direction output pins.  No direction signal on the Mach3 BOB.
 //Spindle relay control is shared with B direction port, only one can be enabled at a time!
@@ -85,3 +88,6 @@
 // Define probe switch input pin.
 #define PROBE_PIN             4
 #define PROBE_PORT            GPIO_INPUT
+
+//ok
+#define COOLANT_PORT            GPIO_OUTPUT
