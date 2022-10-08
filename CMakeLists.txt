@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 option(ADD_HPGL "Add HPGL plugin" OFF) 
-option(ADD_WIFI "Add WiFi networking" OFF)
+option(ADD_WIFI "Add WiFi networking" ON)
 option(ADD_mDNS "Add mDNS service" OFF) # Set LWIP_DIR below to the root path of lwIP sources when ON!
 
 if(ADD_WIFI)
