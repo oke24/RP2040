@@ -86,3 +86,6 @@
 // Define probe switch input pin.
 #define PROBE_PIN             4
 #define PROBE_PORT            GPIO_INPUT
+
+//ok
+#define COOLANT_PORT            GPIO_OUTPUT
