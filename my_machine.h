@@ -21,8 +21,8 @@
 
 // NOTE: Only one board may be enabled!
 // If none is enabled pin mappings from generic_map.h will be used.
-#define BOARD_PICO_CNC
-//#define BOARD_PICOBOB
+//#define BOARD_PICO_CNC
+#define BOARD_PICOBOB
 //#define BOARD_BTT_SKR_PICO_10 // incomplete and untested!
 //#define BOARD_CNC_BOOSTERPACK
 //#define BOARD_CITOH_CX6000    // C.ITOH CX-6000 HPGL plotter
@@ -84,14 +84,15 @@
 //#define WEBDAV_ENABLE        1 // webdav protocol - requires http daemon and SD card enabled.
 #endif
 // The following symbols have the default values as shown, uncomment and change as needed.
-//#define NETWORK_HOSTNAME     "grblHAL"
-//#define NETWORK_IPMODE       1 // 0 = static, 1 = DHCP, 2 = AutoIP
+#define NETWORK_HOSTNAME     "grblHAL"
+#define NETWORK_IPMODE       1 // 0 = static, 1 = DHCP, 2 = AutoIP
 //#define NETWORK_IP           "192.168.5.1"
 //#define NETWORK_GATEWAY      "192.168.5.1"
-//#define NETWORK_MASK         "255.255.255.0"
-//#define NETWORK_FTP_PORT     21
-//#define NETWORK_TELNET_PORT  23
-//#define NETWORK_HTTP_PORT    80
+#define NETWORK_GATEWAY      "192.168.1.1"
+#define NETWORK_MASK         "255.255.255.0"
+#define NETWORK_FTP_PORT     21
+#define NETWORK_TELNET_PORT  23
+#define NETWORK_HTTP_PORT    80
 #if WIFI_SOFTAP > 0
 //#define NETWORK_AP_SSID      "grblHAL_AP"
 //#define NETWORK_AP_PASSWORD  "grblHALap"

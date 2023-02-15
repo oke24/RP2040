@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 option(ADD_HPGL "Add HPGL plugin" OFF) 
-option(ADD_WIFI "Add WiFi networking" OFF)
+option(ADD_WIFI "Add WiFi networking" ON)
 option(ADD_mDNS "Add mDNS service" OFF) # Set LWIP_DIR below to the root path of lwIP sources when ON!
 
 if(ADD_WIFI)
@@ -63,7 +63,7 @@ target_compile_definitions(grblHAL PUBLIC LITTLEFS_ENABLE=1)
 
 if(ADD_WIFI)
 target_compile_definitions(grblHAL PUBLIC WIFI_ENABLE=1)
-target_compile_definitions(grblHAL PUBLIC NDEBUG=0)
+target_compile_definitions(grblHAL PUBLIC NDEBUG=1)
 target_compile_definitions(grblHAL PUBLIC WEBUI_AUTO_REPORT_INTERVAL=0)
 target_sources(grblHAL PRIVATE
  wifi.c
