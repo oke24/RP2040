@@ -39,7 +39,7 @@
 //#define VFD_ENABLE           1 // Set to 1 or 2 for Huanyang VFD spindle. More here https://github.com/grblHAL/Plugins_spindle
 //#define MODBUS_ENABLE        1 // Set to 1 for auto direction, 2 for direction signal on auxillary output pin.
 //#define WIFI_ENABLE          0 // Do NOT enable here, enable in CMakeLists.txt!
-//#define WIFI_SOFTAP          1 // Use Soft AP mode for WiFi. NOTE: WIP - not yet complete!
+#define WIFI_SOFTAP          1 // Use Soft AP mode for WiFi. NOTE: WIP - not yet complete!
 //#define WEBUI_ENABLE         1 // Enable ESP3D-WEBUI plugin along with networking and SD card plugins. Requires WiFi enabled.
 //#define WEBUI_AUTH_ENABLE    1 // Enable ESP3D-WEBUI authentication.
 //#define WEBUI_INFLASH        1 // Store WebUI files in flash instead of on SD card.
@@ -85,9 +85,9 @@
 #endif
 // The following symbols have the default values as shown, uncomment and change as needed.
 #define NETWORK_HOSTNAME     "grblHAL"
-#define NETWORK_IPMODE       1 // 0 = static, 1 = DHCP, 2 = AutoIP
-//#define NETWORK_IP           "192.168.5.1"
-//#define NETWORK_GATEWAY      "192.168.5.1"
+#define NETWORK_IPMODE       0 // 0 = static, 1 = DHCP, 2 = AutoIP
+//#define NETWORK_IP           "192.168.1.210"
+//#define NETWORK_GATEWAY      "192.168.1.1"
 #define NETWORK_GATEWAY      "192.168.1.1"
 #define NETWORK_MASK         "255.255.255.0"
 #define NETWORK_FTP_PORT     21
