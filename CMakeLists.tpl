@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-option(ADD_HPGL "Add HPGL plugin" OFF) 
-option(ADD_WIFI "Add WiFi networking" ON)
-option(ADD_mDNS "Add mDNS service" OFF) # Set LWIP_DIR below to the root path of lwIP sources when ON!
+%compile_options%
 
 if(ADD_WIFI)
 set(PICO_BOARD pico_w)
@@ -13,7 +11,7 @@ if(ADD_WIFI)
 include(networking/CMakeLists.txt)
 include(webui/CMakeLists.txt)
 if(ADD_mDNS OR ADD_MQTT)
-set(LWIP_DIR /home/pi/pico/pico-sdk/lib/lwip) # LWIP_DIRzz
+set(LWIP_DIR /home/pi/pico/pico-sdk/lib/lwip) # LWIP_DIR
 include(${LWIP_DIR}/src/Filelists.cmake)
 endif()
 endif()
@@ -60,14 +58,11 @@ pico_generate_pio_header(grblHAL ${CMAKE_CURRENT_LIST_DIR}/driverPIO.pio)
 target_compile_definitions(grblHAL PUBLIC RP2040)
 target_compile_definitions(grblHAL PUBLIC NEW_FATFS)
 target_compile_definitions(grblHAL PUBLIC LITTLEFS_ENABLE=1)
+%compile_definitions%
 
 if(ADD_WIFI)
 target_compile_definitions(grblHAL PUBLIC WIFI_ENABLE=1)
-<<<<<<< HEAD
-target_compile_definitions(grblHAL PUBLIC NDEBUG=1)
-=======
-target_compile_definitions(grblHAL PUBLIC NDEBUG)
->>>>>>> 54767b35c24455168d3877263d37d3e9b33d5fd1
+target_compile_definitions(grblHAL PUBLIC NDEBUG=0)
 target_compile_definitions(grblHAL PUBLIC WEBUI_AUTO_REPORT_INTERVAL=0)
 target_sources(grblHAL PRIVATE
  wifi.c
