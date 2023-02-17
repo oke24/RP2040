@@ -85,7 +85,7 @@
 #endif
 // The following symbols have the default values as shown, uncomment and change as needed.
 #define NETWORK_HOSTNAME     "grblHAL"
-#define NETWORK_IPMODE       0 // 0 = static, 1 = DHCP, 2 = AutoIP
+#define NETWORK_IPMODE       1 // 0 = static, 1 = DHCP, 2 = AutoIP
 //#define NETWORK_IP           "192.168.1.210"
 //#define NETWORK_GATEWAY      "192.168.1.1"
 #define NETWORK_GATEWAY      "192.168.1.1"
